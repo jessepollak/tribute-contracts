@@ -20,6 +20,7 @@ const getProvider = (network) => {
       url: "http://localhost:7545",
       network: {
         chainId: getNetworkDetails(network).chainId,
+        name: network,
       },
     });
   }

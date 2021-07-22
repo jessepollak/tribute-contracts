@@ -39,10 +39,12 @@ const newManagingProposal = async (
   const uniqueId = await newProposal(
     `Update adapter: ${adapterName}`,
     "Creates or update an adapter",
+    opts.network,
     opts.dao,
     opts.space,
+    opts.contract,
     provider,
-    wallet.address
+    wallet
   );
 
   await contract.submitProposal(

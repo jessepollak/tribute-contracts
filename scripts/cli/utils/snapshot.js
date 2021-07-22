@@ -5,7 +5,6 @@ const {
   getSpace,
   prepareDraftMessage,
   prepareProposalMessage,
-  signMessage,
   SnapshotMessageBase,
   SnapshotMessageProposal,
   SnapshotProposalData,
@@ -14,6 +13,9 @@ const {
   SnapshotType,
   submitMessage,
 } = require("@openlaw/snapshot-js-erc712");
+const { signTypedData_v4 } = require("eth-sig-util");
+const { toBuffer } = require("ethereumjs-util");
+const { getDAOConfig } = require("../core/dao-registry");
 
 const ContractDAOConfigKeys = {
   offchainVotingGracePeriod: "offchainvoting.gracePeriod",
@@ -28,19 +30,22 @@ const ContractDAOConfigKeys = {
   votingVotingPeriod: "voting.votingPeriod",
 };
 
-
-
-
 if (!process.env.SNAPSHOT_HUB_API_URL)
   throw Error("Missing env var: <SNAPSHOT_HUB_API_URL>");
 
-const buildProposalMessageHelper = async (commonData, daoRegistry) => {
-  const snapshot = 1; //await web3Instance.eth.getBlockNumber();
+const buildProposalMessageHelper = async (
+  commonData,
+  network,
+  daoRegistry,
+  provider
+) => {
+  const snapshot = await provider.getBlockNumber();
 
   const votingTimeSeconds = parseInt(
-    await getDAOConfigEntry(
+    await getDAOConfig(
       ContractDAOConfigKeys.offchainVotingVotingPeriod,
-      daoRegistry
+      daoRegistry,
+      network
     )
   );
 
@@ -54,8 +59,18 @@ const buildProposalMessageHelper = async (commonData, daoRegistry) => {
   );
 };
 
-const signAndSendProposal = async (proposal, provider, signerAddress) => {
-  const { partialProposalData, adapterAddress, type, space } = proposal;
+const signAndSendProposal = async (proposal, provider, wallet) => {
+  const {
+    partialProposalData,
+    adapterAddress,
+    type,
+    network,
+    dao,
+    space,
+  } = proposal;
+
+  // When using ganache, the getNetwork call always returns UNKNOWN, so we ignore that.
+  const { chainId } = await provider.getNetwork();
 
   const actionId = adapterAddress;
 
@@ -75,10 +90,15 @@ const signAndSendProposal = async (proposal, provider, signerAddress) => {
   const message =
     type === SnapshotType.draft
       ? await buildDraftMessage(commonData, process.env.SNAPSHOT_HUB_API_URL)
-      : await buildProposalMessageHelper({
-          ...commonData,
-          timestamp,
-        });
+      : await buildProposalMessageHelper(
+          {
+            ...commonData,
+            timestamp,
+          },
+          network,
+          dao,
+          provider
+        );
 
   // 2. Prepare signing data. Snapshot and the contracts will verify this same data against the signature.
   const erc712Message =
@@ -88,27 +108,26 @@ const signAndSendProposal = async (proposal, provider, signerAddress) => {
 
   const { domain, types } = getDomainDefinition(
     { ...erc712Message, type },
-    daoRegistryAddress,
+    dao,
     actionId,
-    1337 // FIXME read it from env?
+    chainId
   );
 
   // 3. Sign data
-  const signature = await signMessage(
-    provider,
-    signerAddress,
-    JSON.stringify({
+  const privKeyBuf = toBuffer(wallet.privateKey);
+  const signature = signTypedData_v4(privKeyBuf, {
+    data: {
       types,
-      domain,
       primaryType: "Message",
+      domain,
       message: erc712Message,
-    })
-  );
+    },
+  });
 
   // 4. Send data to snapshot-hub
   const resp = await submitMessage(
     process.env.SNAPSHOT_HUB_API_URL,
-    account,
+    wallet.address,
     message,
     signature,
     {
@@ -130,10 +149,12 @@ const signAndSendProposal = async (proposal, provider, signerAddress) => {
 const newProposal = async (
   title,
   description,
+  network,
   dao,
   space,
+  adapter,
   provider,
-  signerAddress
+  wallet
 ) => {
   // Sign and submit proposal for Snapshot Hub
   const { uniqueId } = await signAndSendProposal(
@@ -147,10 +168,12 @@ const newProposal = async (
       },
       type: SnapshotType.proposal,
       space,
+      adapterAddress: adapter,
+      network,
+      dao,
     },
     provider,
-    signerAddress,
-    dao
+    wallet
   );
   console.log(`New snapshot proposal created: ${uniqueId}`);
   return uniqueId;
