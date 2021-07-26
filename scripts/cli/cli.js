@@ -35,29 +35,19 @@ const main = () => {
 
   program
     .command(
-      "adapter-add <proposalId> <adapterId> <adapterAddress> <keys> <values> <aclFlags> [data]"
+      "adapter-add <adapterId> <adapterAddress> <keys> <values> <aclFlags> [data]"
     )
     .description("Submit a new managing proposal.")
-    .action(
-      async (
-        proposalId,
+    .action(async (adapterName, adapterAddress, keys, values, aclFlags, data) =>
+      newManagingProposal(
         adapterName,
         adapterAddress,
         keys,
         values,
         aclFlags,
-        data
-      ) =>
-        newManagingProposal(
-          program.opts(),
-          proposalId,
-          adapterName,
-          adapterAddress,
-          keys,
-          values,
-          aclFlags,
-          data
-        )
+        data,
+        program.opts()
+      )
     );
 
   program

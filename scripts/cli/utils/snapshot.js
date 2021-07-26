@@ -83,28 +83,22 @@ const signAndSendProposal = async (proposal, provider, wallet) => {
     body,
     metadata,
     token: data.token,
-    space,
+    space: space,
   };
 
   // 1. Check proposal type and prepare appropriate message
-  const message =
-    type === SnapshotType.draft
-      ? await buildDraftMessage(commonData, process.env.SNAPSHOT_HUB_API_URL)
-      : await buildProposalMessageHelper(
-          {
-            ...commonData,
-            timestamp,
-          },
-          network,
-          dao,
-          provider
-        );
+  const message = await buildProposalMessageHelper(
+    {
+      ...commonData,
+      timestamp,
+    },
+    network,
+    dao,
+    provider
+  );
 
   // 2. Prepare signing data. Snapshot and the contracts will verify this same data against the signature.
-  const erc712Message =
-    type === SnapshotType.draft
-      ? prepareDraftMessage(message)
-      : prepareProposalMessage(message);
+  const erc712Message = prepareProposalMessage(message);
 
   const { domain, types } = getDomainDefinition(
     { ...erc712Message, type },
@@ -114,8 +108,7 @@ const signAndSendProposal = async (proposal, provider, wallet) => {
   );
 
   // 3. Sign data
-  const privKeyBuf = toBuffer(wallet.privateKey);
-  const signature = signTypedData_v4(privKeyBuf, {
+  const signature = signTypedData_v4(toBuffer(wallet.privateKey), {
     data: {
       types,
       primaryType: "Message",
@@ -140,13 +133,17 @@ const signAndSendProposal = async (proposal, provider, wallet) => {
 
   return {
     data: message,
-    signature,
+    erc712Message: {
+      ...erc712Message,
+      submitter: wallet.address,
+      sig: signature,
+    },
     uniqueId: resp.data.uniqueId,
     uniqueIdDraft: resp.data.uniqueIdDraft || "",
   };
 };
 
-const newProposal = async (
+const newProposal = (
   title,
   description,
   network,
@@ -157,7 +154,7 @@ const newProposal = async (
   wallet
 ) => {
   // Sign and submit proposal for Snapshot Hub
-  const { uniqueId } = await signAndSendProposal(
+  return signAndSendProposal(
     {
       partialProposalData: {
         name: title,
@@ -174,9 +171,19 @@ const newProposal = async (
     },
     provider,
     wallet
-  );
-  console.log(`New snapshot proposal created: ${uniqueId}`);
-  return uniqueId;
+  )
+    .then((res) => {
+      console.log(`New snapshot proposal: ${res.uniqueId}`);
+      return res;
+    })
+    .catch((err) => {
+      const resp = err.response;
+      if (resp && resp.data && resp.data.error_description) {
+        console.error(`ERROR: ${resp.data.error_description}`);
+      } else {
+        throw err;
+      }
+    });
 };
 
 module.exports = { newProposal };

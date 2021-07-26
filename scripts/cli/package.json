@@ -9,9 +9,9 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@openlaw/snapshot-js-erc712": "^1.1.2",
-    "eth-sig-util": "^3.0.1",
-    "ethereumjs-util": "^7.1.0",
-    "ethers": "^5.4.1"
+    "@openlaw/snapshot-js-erc712": "1.1.2",
+    "eth-sig-util": "3.0.1",
+    "ethereumjs-util": "7.1.0",
+    "ethers": "5.4.1"
   }
 }

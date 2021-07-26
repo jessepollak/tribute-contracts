@@ -1,3 +1,4 @@
+const { prepareVoteProposalPayload } = require("@openlaw/snapshot-js-erc712");
 const { ethers } = require("ethers");
 const toBytes32 = ethers.utils.formatBytes32String;
 const { sha3, fromAscii } = require("../../../utils/ContractUtil");
@@ -6,21 +7,19 @@ const { getContract } = require("../utils/contract");
 const { newProposal } = require("../utils/snapshot");
 
 const newManagingProposal = async (
-  opts,
-  proposalId,
   adapterName,
   adapterAddress,
   keys,
   values,
   aclFlags,
-  data
+  data,
+  opts
 ) => {
   console.log(`New managing proposal`);
   console.log(`\tNetwork:\t\t${opts.network}`);
   console.log(`\tDAO:\t\t\t${opts.dao}`);
   console.log(`\tSpace:\t\t\t${opts.space}`);
   console.log(`\tManagingContract:\t${opts.contract}`);
-  console.log(`\tProposalId:\t\t${proposalId}`);
   console.log(`\tAdapter:\t\t${adapterName} @ ${adapterAddress}`);
   console.log(`\tAccessFlags:\t\t${aclFlags}`);
   console.log(`\tKeys:\t\t\t${keys}`);
@@ -36,33 +35,63 @@ const newManagingProposal = async (
     opts.contract
   );
 
-  const uniqueId = await newProposal(
-    `Update adapter: ${adapterName}`,
-    "Creates or update an adapter",
+  await newProposal(
+    `Adapter: ${adapterName}`,
+    "Creates/Update adapter",
     opts.network,
     opts.dao,
     opts.space,
     opts.contract,
     provider,
     wallet
-  );
-
-  await contract.submitProposal(
-    opts.dao,
-    toBytes32(proposalId),
-    {
-      adapterId: sha3(adapterName),
-      adapterAddress: adapterAddress,
-      flags: entryDao(
-        adapterName,
-        { address: adapterAddress },
-        parseDaoFlags(aclFlags)
-      ).flags,
-    },
-    configKeys,
-    configValues,
-    data ? fromAscii(data) : []
-  );
+  )
+    .then(async (res) => {
+      console.log(res);
+      const newData = {
+        timestamp: res.data.timestamp,
+        spaceHash: res.erc712Message.spaceHash,
+        payload: prepareVoteProposalPayload(res.data.payload),
+        sig: res.erc712Message.sig,
+      };
+      console.log(newData);
+      const encodedData = ethers.utils._TypedDataEncoder.encode(
+        {
+          ProposalMessage: {
+            timestamp: "uint64",
+            spaceHash: "bytes32",
+            payload: {
+              nameHash: "bytes32",
+              bodyHash: "bytes32",
+              choices: "string[]",
+              start: "uint64",
+              end: "uint64",
+              snapshot: "string",
+            },
+            sig: "bytes",
+          },
+        },
+        newData
+      );
+      console.log(encodedData);
+      await contract.submitProposal(
+        opts.dao,
+        sha3(res.uniqueId),
+        {
+          adapterId: sha3(adapterName),
+          adapterAddress: adapterAddress,
+          flags: entryDao(
+            adapterName,
+            { address: adapterAddress },
+            parseDaoFlags(aclFlags)
+          ).flags,
+        },
+        configKeys,
+        configValues,
+        data ? encodedData : []
+      );
+      return sha3(res.uniqueId);
+    })
+    .then((proposalId) => console.log(`New DAO proposal: ${proposalId}`));
 };
 
 module.exports = { newManagingProposal };
