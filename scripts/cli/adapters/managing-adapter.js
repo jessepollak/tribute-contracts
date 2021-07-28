@@ -1,7 +1,8 @@
-const { prepareVoteProposalPayload } = require("@openlaw/snapshot-js-erc712");
+const { prepareVoteProposalData } = require("@openlaw/snapshot-js-erc712");
+const Web3 = require("web3");
 const { ethers } = require("ethers");
 const toBytes32 = ethers.utils.formatBytes32String;
-const { sha3, fromAscii } = require("../../../utils/ContractUtil");
+const { sha3 } = require("../../../utils/ContractUtil");
 const { entryDao, parseDaoFlags } = require("../../../utils/DeploymentUtil");
 const { getContract } = require("../utils/contract");
 const { newProposal } = require("../utils/snapshot");
@@ -46,33 +47,24 @@ const newManagingProposal = async (
     wallet
   )
     .then(async (res) => {
-      console.log(res);
-      const newData = {
-        timestamp: res.data.timestamp,
-        spaceHash: res.erc712Message.spaceHash,
-        payload: prepareVoteProposalPayload(res.data.payload),
-        sig: res.erc712Message.sig,
-      };
-      console.log(newData);
-      const encodedData = ethers.utils._TypedDataEncoder.encode(
+      const data = res.data;
+      const encodedData = prepareVoteProposalData(
         {
-          ProposalMessage: {
-            timestamp: "uint64",
-            spaceHash: "bytes32",
-            payload: {
-              nameHash: "bytes32",
-              bodyHash: "bytes32",
-              choices: "string[]",
-              start: "uint64",
-              end: "uint64",
-              snapshot: "string",
-            },
-            sig: "bytes",
+          payload: {
+            name: data.payload.name,
+            body: data.payload.body,
+            choices: data.payload.choices,
+            snapshot: data.payload.snapshot.toString(),
+            start: data.payload.start,
+            end: data.payload.end,
           },
+          sig: res.erc712Message.sig,
+          space: data.space,
+          timestamp: parseInt(data.timestamp),
         },
-        newData
+        new Web3("")
       );
-      console.log(encodedData);
+      let gas = (await provider._getBlock("latest")).gasLimit;
       await contract.submitProposal(
         opts.dao,
         sha3(res.uniqueId),
@@ -87,7 +79,7 @@ const newManagingProposal = async (
         },
         configKeys,
         configValues,
-        data ? encodedData : []
+        encodedData ? encodedData : [],
       );
       return sha3(res.uniqueId);
     })
